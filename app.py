@@ -21,11 +21,10 @@ def get_stock_data_fmp(ticker):
     try:
         profile = get_fmp_json(f"profile/{ticker}?")[0]
         income = get_fmp_json(f"income-statement/{ticker}?limit=5")
-        balance = get_fmp_json(f"balance-sheet-statement/{ticker}?limit=5")
-        cashflow = get_fmp_json(f"cash-flow-statement/{ticker}?limit=10")
         metrics = get_fmp_json(f"key-metrics-ttm/{ticker}?")[0]
 
-        fcf = [row["freeCashFlow"] for row in cashflow if row.get("freeCashFlow")]
+        fcf = get_fmp_json(f"cash-flow-statement/{ticker}?limit=10")
+        fcf = [row["freeCashFlow"] for row in fcf if row.get("freeCashFlow")]
 
         return {
             "Source": "FMP",
@@ -38,6 +37,9 @@ def get_stock_data_fmp(ticker):
             "ROE": float(metrics.get("roe", 0)),
             "Debt to Equity": float(metrics.get("debtToEquity", 0)),
             "Price": profile.get("price", None),
+            "Gross Margin": float(metrics.get("grossProfitMargin", 0)),
+            "R&D": float(metrics.get("researchAndDevelopmentToRevenue", 0)),
+            "Revenue": float(metrics.get("revenuePerShareTTM", 0)),
             "Dividend Yield": profile.get("lastDiv", 0) / profile.get("price", 1),
             "FCF": fcf,
             "Net Income": income[0].get("netIncome", None),
@@ -67,6 +69,9 @@ def get_stock_data_yf(ticker):
             "ROE": info.get("returnOnEquity", None),
             "Debt to Equity": info.get("debtToEquity", None),
             "Price": info.get("currentPrice", None),
+            "Gross Margin": None,
+            "R&D": None,
+            "Revenue": None,
             "Dividend Yield": info.get("dividendYield", None),
             "FCF": fcf,
             "Net Income": info.get("netIncomeToCommon", None),
@@ -107,6 +112,33 @@ def evaluate_buffett_criteria(data):
 
     return score, reasons
 
+# === BASIC MOAT EVALUATION ===
+def evaluate_basic_moat(data):
+    moat_points = 0
+    moat_reasons = []
+
+    if data["ROE"] and data["ROE"] > 0.20:
+        moat_points += 1
+        moat_reasons.append("✓ Strong brand (ROE > 20%)")
+
+    if data["Gross Margin"] and data["Gross Margin"] > 0.5:
+        moat_points += 1
+        moat_reasons.append("✓ Cost advantage (Gross Margin > 50%)")
+
+    if data["Revenue"] and data["Revenue"] > 50:
+        moat_points += 1
+        moat_reasons.append("✓ Customer stickiness (High revenue/share)")
+
+    if data["Market Cap"] and data["Sector"] in ["Technology", "Communication Services"] and data["Market Cap"] > 50e9:
+        moat_points += 1
+        moat_reasons.append("✓ Network Effects (Large tech firm)")
+
+    if data["PB Ratio"] and data["PB Ratio"] > 5 or (data["R&D"] and data["R&D"] > 0.1):
+        moat_points += 1
+        moat_reasons.append("✓ Intangible Assets (R&D or high PB)")
+
+    return moat_points, moat_reasons
+
 # === DCF CALCULATION ===
 def calculate_intrinsic_value(fcf_list, growth_rate_initial=0.07, growth_rate_terminal=0.03, discount_rate=0.10, forecast_years=10):
     if not fcf_list or len(fcf_list) < 3:
@@ -136,28 +168,13 @@ def calculate_stock_rank(buffett_score, moat_score, margin_of_safety):
 # === STREAMLIT UI ===
 st.title("Buffett-Style Stock Screener")
 
-# === Main Input Fields (now on main page for mobile) ===
 source_choice = st.radio("Select Data Source", ("FMP (accurate)", "yfinance (estimated)"))
 ticker_input = st.text_input("Enter Stock Ticker (e.g., AAPL, KO, PG):")
 
-st.header("Moat Checklist")
-moats = {
-    "Brand Power": st.checkbox("Brand Power"),
-    "Network Effects": st.checkbox("Network Effects"),
-    "Switching Costs": st.checkbox("Switching Costs"),
-    "Cost Advantage": st.checkbox("Cost Advantage"),
-    "Intangible Assets": st.checkbox("Intangible Assets")
-}
-moat_score = sum(moats.values())
-
-# === Show Instructions If No Input ===
 if not ticker_input:
-    st.info("Please enter a stock ticker above to begin.")
+    st.info("Please enter a stock ticker to begin.")
 else:
-    if source_choice == "FMP (accurate)":
-        data = get_stock_data_fmp(ticker_input.upper())
-    else:
-        data = get_stock_data_yf(ticker_input.upper())
+    data = get_stock_data_fmp(ticker_input.upper()) if source_choice == "FMP (accurate)" else get_stock_data_yf(ticker_input.upper())
 
     if data:
         st.subheader(f"{data['Name']} ({data['Ticker']}) - Source: {data['Source']}")
@@ -173,34 +190,18 @@ else:
         for note in notes:
             st.markdown(f"- {note}")
 
-        st.markdown(f"**ROE:** {data['ROE']:.2f}" if data["ROE"] else "ROE not available")
-        st.markdown(f"**PE Ratio:** {data['PE Ratio']:.2f}" if data["PE Ratio"] else "PE not available")
-        st.markdown(f"**Debt to Equity:** {data['Debt to Equity']:.2f}" if data["Debt to Equity"] else "D/E not available")
-        st.markdown(f"**Price/Book Ratio:** {data['PB Ratio']:.2f}" if data["PB Ratio"] else "PB not available")
-
-        # Moat
+        # Moat Evaluation (Auto)
         st.write("---")
-        st.subheader("Moat Evaluation")
-        for k, v in moats.items():
-            st.markdown(f"- {'✓' if v else '✗'} {k}")
+        st.subheader("Moat Evaluation (Auto)")
+        moat_score, moat_notes = evaluate_basic_moat(data)
         st.markdown(f"**Moat Score:** {moat_score}/5")
+        for note in moat_notes:
+            st.markdown(f"- {note}")
 
-        # Management
-        st.write("---")
-        st.subheader("Management Quality")
-        if data["Exec Compensation"] and data["Net Income"]:
-            ratio = data["Exec Compensation"] / abs(data["Net Income"])
-            if ratio < 0.05:
-                st.success("✓ Reasonable executive compensation")
-            else:
-                st.warning("✗ High executive compensation relative to net income")
-        else:
-            st.info("Executive compensation data not available")
-
-        # FCF Chart
+        # FCF Chart (Safe)
         st.write("---")
         st.subheader("Free Cash Flow Trend")
-        if data["FCF"] and len(data["FCF"]) >= 3:
+        if data["FCF"] is not None and isinstance(data["FCF"], (list, np.ndarray)) and len(data["FCF"]) >= 3:
             df_fcf = pd.DataFrame(data["FCF"], columns=["FCF"])
             st.line_chart(df_fcf[::-1])
         else:
