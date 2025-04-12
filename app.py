@@ -3,19 +3,23 @@ import yfinance as yf
 import numpy as np
 import pandas as pd
 
-# --- DCF Model ---
+# --- Intrinsic Value Calculation ---
 def calculate_intrinsic_value(fcf_list, growth_rate_initial=0.07, growth_rate_terminal=0.03, discount_rate=0.10, forecast_years=10):
-    if not fcf_list or len(fcf_list) < 3:
+    if fcf_list is None or len(fcf_list) < 3:
         return None
+
     last_fcf = np.mean(fcf_list[-3:])
     intrinsic_value = 0
+
     for year in range(1, forecast_years + 1):
         growth = (1 + growth_rate_initial) if year <= 5 else (1 + growth_rate_terminal)
         projected_fcf = last_fcf * (growth ** year)
         intrinsic_value += projected_fcf / ((1 + discount_rate) ** year)
+
     terminal_fcf = last_fcf * ((1 + growth_rate_terminal) ** forecast_years)
     terminal_value = terminal_fcf * (1 + growth_rate_terminal) / (discount_rate - growth_rate_terminal)
     intrinsic_value += terminal_value / ((1 + discount_rate) ** forecast_years)
+
     return intrinsic_value
 
 # --- Get Financial Data ---
@@ -34,6 +38,7 @@ def get_stock_data(ticker):
         depreciation = cashflow.get("Depreciation", pd.Series())
         net_income = income.get("Net Income", pd.Series())
         owner_earnings = []
+
         for i in range(min(len(net_income), len(capex), len(depreciation))):
             try:
                 oe = net_income[i] + depreciation[i] - capex[i]
@@ -53,7 +58,6 @@ def get_stock_data(ticker):
             "Debt to Equity": info.get("debtToEquity", None),
             "Exec Compensation": info.get("totalCashCompensation", 0),
             "Net Income": net_income[0] if not net_income.empty else None,
-            "Peers": info.get("companyOfficers", []),
             "Price": info.get("currentPrice", None),
             "FCF": fcf,
             "Owner Earnings": owner_earnings,
@@ -96,7 +100,7 @@ def evaluate_buffett_criteria(data):
 
     return score, reasons
 
-# --- Benchmarking against S&P 500 average ---
+# --- S&P 500 Benchmarking ---
 def get_benchmark_data():
     return {
         "PE": 25,
@@ -115,7 +119,7 @@ def calculate_stock_rank(buffett_score, moat_score, margin_of_safety):
     else:
         return "Avoid"
 
-# --- Streamlit UI ---
+# --- Streamlit App ---
 st.set_page_config(page_title="Buffett-Style Stock Screener", layout="wide")
 st.title("Buffett-Style Stock Screener")
 
@@ -139,6 +143,7 @@ if ticker_input:
         st.markdown(f"**Sector:** {data['Sector']}")
         st.markdown(f"**Price:** ${data['Price']:.2f}" if data['Price'] else "N/A")
         st.markdown(f"**Dividend Yield:** {data['Dividend Yield'] * 100:.2f}%" if data["Dividend Yield"] else "N/A")
+        st.markdown(f"**Forward PE:** {data['Forward PE']}" if data["Forward PE"] else "N/A")
 
         st.write("---")
         st.subheader("Buffett Criteria")
@@ -158,16 +163,20 @@ if ticker_input:
         if data["Exec Compensation"] and data["Net Income"]:
             comp = data["Exec Compensation"]
             ni = data["Net Income"]
-            if comp / abs(ni) < 0.05:
-                st.success("✓ Reasonable executive compensation")
+            if ni and abs(ni) > 0:
+                ratio = comp / abs(ni)
+                if ratio < 0.05:
+                    st.success("✓ Reasonable executive compensation")
+                else:
+                    st.warning("✗ High executive compensation relative to earnings")
             else:
-                st.warning("✗ High executive compensation relative to earnings")
+                st.info("Net income unavailable for comparison")
         else:
-            st.info("Executive compensation data unavailable")
+            st.info("Compensation or net income data unavailable")
 
         st.write("---")
         st.subheader("Free Cash Flow Trend")
-        if data["FCF"] and len(data["FCF"]) >= 3:
+        if data["FCF"] is not None and data["FCF"].size >= 3:
             st.line_chart(pd.DataFrame(data["FCF"], columns=["FCF"]))
         else:
             st.warning("Not enough FCF data")
@@ -175,7 +184,7 @@ if ticker_input:
         st.write("---")
         st.subheader("Intrinsic Value (DCF)")
         try:
-            fcf_input = float(st.number_input("Estimated FCF", value=float(data["FCF"][0] if data["FCF"] else 1e7)))
+            fcf_input = float(st.number_input("Estimated FCF", value=float(data["FCF"][0] if data["FCF"].size > 0 else 1e7)))
             growth = st.slider("Growth Rate (%)", 2, 20, 8) / 100
             discount = st.slider("Discount Rate (%)", 5, 15, 10) / 100
 
@@ -186,7 +195,6 @@ if ticker_input:
                 mos = (intrinsic - price) / price if price else 0
                 st.markdown(f"**Margin of Safety:** {mos * 100:.1f}%")
 
-                # Rank & Recommendation
                 rank = calculate_stock_rank(score, moat_score, mos)
                 st.write("---")
                 st.subheader("Final Verdict")
@@ -200,7 +208,7 @@ if ticker_input:
         except:
             st.warning("Could not compute intrinsic value.")
 
-        # --- Benchmark Comparison ---
+        # Benchmarking
         st.write("---")
         st.subheader("Benchmark Comparison (vs. S&P 500)")
         benchmark = get_benchmark_data()
