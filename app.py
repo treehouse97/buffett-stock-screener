@@ -4,7 +4,7 @@ import requests
 import numpy as np
 import pandas as pd
 
-# === PAGE CONFIG (must be first Streamlit command) ===
+# === PAGE CONFIG ===
 st.set_page_config(page_title="Buffett-Style Stock Screener", layout="wide")
 
 # === CONFIG ===
@@ -136,22 +136,24 @@ def calculate_stock_rank(buffett_score, moat_score, margin_of_safety):
 # === STREAMLIT UI ===
 st.title("Buffett-Style Stock Screener")
 
-# === Sidebar Controls ===
-source_choice = st.sidebar.radio("Select Data Source", ("FMP (accurate)", "yfinance (estimated)"))
-ticker_input = st.sidebar.text_input("Enter Stock Ticker (e.g., AAPL, KO, PG):")
+# === Main Input Fields (now on main page for mobile) ===
+source_choice = st.radio("Select Data Source", ("FMP (accurate)", "yfinance (estimated)"))
+ticker_input = st.text_input("Enter Stock Ticker (e.g., AAPL, KO, PG):")
 
-st.sidebar.header("Moat Checklist")
+st.header("Moat Checklist")
 moats = {
-    "Brand Power": st.sidebar.checkbox("Brand Power"),
-    "Network Effects": st.sidebar.checkbox("Network Effects"),
-    "Switching Costs": st.sidebar.checkbox("Switching Costs"),
-    "Cost Advantage": st.sidebar.checkbox("Cost Advantage"),
-    "Intangible Assets": st.sidebar.checkbox("Intangible Assets")
+    "Brand Power": st.checkbox("Brand Power"),
+    "Network Effects": st.checkbox("Network Effects"),
+    "Switching Costs": st.checkbox("Switching Costs"),
+    "Cost Advantage": st.checkbox("Cost Advantage"),
+    "Intangible Assets": st.checkbox("Intangible Assets")
 }
 moat_score = sum(moats.values())
 
-# === Main App Logic ===
-if ticker_input:
+# === Show Instructions If No Input ===
+if not ticker_input:
+    st.info("Please enter a stock ticker above to begin.")
+else:
     if source_choice == "FMP (accurate)":
         data = get_stock_data_fmp(ticker_input.upper())
     else:
