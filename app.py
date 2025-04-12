@@ -22,7 +22,6 @@ def get_stock_data_fmp(ticker):
         profile = get_fmp_json(f"profile/{ticker}?")[0]
         income = get_fmp_json(f"income-statement/{ticker}?limit=5")
         metrics = get_fmp_json(f"key-metrics-ttm/{ticker}?")[0]
-
         fcf = get_fmp_json(f"cash-flow-statement/{ticker}?limit=10")
         fcf = [row["freeCashFlow"] for row in fcf if row.get("freeCashFlow")]
 
@@ -156,14 +155,12 @@ def calculate_intrinsic_value(fcf_list, growth_rate_initial=0.07, growth_rate_te
 # === FINAL VERDICT ===
 def calculate_stock_rank(buffett_score, moat_score, margin_of_safety):
     total = buffett_score + moat_score
-    if margin_of_safety > 0.3 and total >= 6:
-        return "Excellent"
-    elif margin_of_safety > 0.2 and total >= 5:
-        return "Good"
-    elif total >= 4:
-        return "Average"
-    else:
-        return "Avoid"
+    if margin_of_safety is not None:
+        if margin_of_safety > 0.3 and total >= 6:
+            return "Excellent"
+        elif margin_of_safety > 0.2 and total >= 5:
+            return "Good"
+    return "Average" if total >= 4 else "Avoid"
 
 # === STREAMLIT UI ===
 st.title("Buffett-Style Stock Screener")
@@ -201,33 +198,40 @@ else:
         # FCF Chart (Safe)
         st.write("---")
         st.subheader("Free Cash Flow Trend")
-        if data["FCF"] is not None and isinstance(data["FCF"], (list, np.ndarray)) and len(data["FCF"]) >= 3:
+        if data["FCF"] and isinstance(data["FCF"], (list, np.ndarray)) and len(data["FCF"]) >= 3:
             df_fcf = pd.DataFrame(data["FCF"], columns=["FCF"])
             st.line_chart(df_fcf[::-1])
         else:
             st.warning("Not enough FCF data")
 
-        # DCF
+        # DCF + Final Verdict
         st.write("---")
         st.subheader("Intrinsic Value (DCF)")
-        try:
-            fcf_input = float(st.number_input("Estimated FCF", value=float(data["FCF"][0] if data["FCF"] else 1e7)))
-            growth = st.slider("Growth Rate (%)", 2, 20, 8) / 100
-            discount = st.slider("Discount Rate (%)", 5, 15, 10) / 100
-            intrinsic = calculate_intrinsic_value(data["FCF"], growth, 0.03, discount)
-            if intrinsic:
-                st.markdown(f"**Intrinsic Value:** ${intrinsic:,.2f}")
-                margin = (intrinsic - data["Price"]) / data["Price"]
-                st.markdown(f"**Margin of Safety:** {margin * 100:.2f}%")
+        intrinsic = None
+        margin = None
 
-                # Final rating
-                rating = calculate_stock_rank(score, moat_score, margin)
-                st.write("---")
-                st.subheader("Final Verdict")
-                st.markdown(f"**Stock Rating:** {rating}")
-                if rating in ["Excellent", "Good"]:
-                    st.success("This stock may be worth further research.")
-                else:
-                    st.warning("This may not meet Buffett's standards.")
-        except:
-            st.warning("Could not calculate intrinsic value.")
+        if data["FCF"] and isinstance(data["FCF"], (list, np.ndarray)) and len(data["FCF"]) >= 3:
+            try:
+                fcf_input = float(st.number_input("Estimated FCF", value=float(data["FCF"][0])))
+                growth = st.slider("Growth Rate (%)", 2, 20, 8) / 100
+                discount = st.slider("Discount Rate (%)", 5, 15, 10) / 100
+                intrinsic = calculate_intrinsic_value(data["FCF"], growth, 0.03, discount)
+
+                if intrinsic:
+                    st.markdown(f"**Intrinsic Value:** ${intrinsic:,.2f}")
+                    margin = (intrinsic - data["Price"]) / data["Price"]
+                    st.markdown(f"**Margin of Safety:** {margin * 100:.2f}%")
+            except:
+                st.warning("DCF calculation failed.")
+        else:
+            st.warning("Not enough FCF data")
+
+        # Final Verdict (always shows)
+        st.write("---")
+        st.subheader("Final Verdict")
+        rating = calculate_stock_rank(score, moat_score, margin)
+        st.markdown(f"**Stock Rating:** {rating}")
+        if rating in ["Excellent", "Good"]:
+            st.success("This stock may be worth further research.")
+        else:
+            st.warning("This may not meet Buffett's standards.")
