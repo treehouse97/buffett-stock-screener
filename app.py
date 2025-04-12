@@ -26,11 +26,31 @@ def get_stock_data(ticker):
         financials = stock.financials
         cashflow = stock.cashflow
 
-        fcf_list = []
+        
+def calculate_intrinsic_value(fcf_list, growth_rate_initial=0.05, growth_rate_terminal=0.02, discount_rate=0.10, forecast_years=10):
+    if len(fcf_list) == 0:
+        return None
+
+    avg_fcf = np.mean(fcf_list)
+    intrinsic_value = 0
+
+    # Stage 1: Forecast period
+    for year in range(1, forecast_years + 1):
+        projected_fcf = avg_fcf * ((1 + growth_rate_initial) ** year)
+        intrinsic_value += projected_fcf / ((1 + discount_rate) ** year)
+
+    # Terminal value
+    terminal_value = (avg_fcf * ((1 + growth_rate_initial) ** forecast_years) * (1 + growth_rate_terminal)) / (discount_rate - growth_rate_terminal)
+    intrinsic_value += terminal_value / ((1 + discount_rate) ** forecast_years)
+
+    return intrinsic_value
+
+
+fcf_list = []
         try:
             op_cash = cashflow.loc["Total Cash From Operating Activities"]
             capex = cashflow.loc["Capital Expenditures"]
-            fcf_list = (op_cash - capex).dropna().sort_index(ascending=False).values[:5]
+            fcf_list = (op_cash - capex).dropna().sort_index(ascending=False).values[:10]
         except KeyError:
             fcf_list = []
 
