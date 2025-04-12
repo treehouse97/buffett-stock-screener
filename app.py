@@ -4,6 +4,7 @@ import yfinance as yf
 import numpy as np
 import pandas as pd
 
+from valuation_utils import calculate_intrinsic_value
 def calculate_intrinsic_value(fcf_list, growth_rate_initial=0.05, growth_rate_terminal=0.02, discount_rate=0.10, forecast_years=10):
     if len(fcf_list) == 0:
         return None
