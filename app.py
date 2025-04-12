@@ -198,7 +198,7 @@ else:
         # FCF Chart (Safe)
         st.write("---")
         st.subheader("Free Cash Flow Trend")
-        if data["FCF"] and isinstance(data["FCF"], (list, np.ndarray)) and len(data["FCF"]) >= 3:
+        if isinstance(data["FCF"], (list, np.ndarray)) and len(data["FCF"]) >= 3:
             df_fcf = pd.DataFrame(data["FCF"], columns=["FCF"])
             st.line_chart(df_fcf[::-1])
         else:
@@ -210,7 +210,7 @@ else:
         intrinsic = None
         margin = None
 
-        if data["FCF"] and isinstance(data["FCF"], (list, np.ndarray)) and len(data["FCF"]) >= 3:
+        if isinstance(data["FCF"], (list, np.ndarray)) and len(data["FCF"]) >= 3:
             try:
                 fcf_input = float(st.number_input("Estimated FCF", value=float(data["FCF"][0])))
                 growth = st.slider("Growth Rate (%)", 2, 20, 8) / 100
