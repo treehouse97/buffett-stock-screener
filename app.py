@@ -1,4 +1,4 @@
-import streamlit as stimport streamlit as st
+import streamlit as st
 import yfinance as yf
 import requests
 import numpy as np
