@@ -7,7 +7,6 @@ import pandas as pd
 st.set_page_config(page_title="Buffett-Style Stock Screener", layout="wide")
 st.title("Buffett-Style Stock Screener")
 
-# Input
 ticker_input = st.text_input("Enter Stock Ticker Symbol (e.g., AAPL, KO, PG):")
 
 # Moat Checklist
@@ -28,9 +27,12 @@ def get_stock_data(ticker):
         cashflow = stock.cashflow
 
         fcf_list = []
-        if not cashflow.empty:
-            fcf_list = cashflow.loc["Total Cash From Operating Activities"] - cashflow.loc["Capital Expenditures"]
-            fcf_list = fcf_list.dropna().sort_index(ascending=False).values[:5]
+        try:
+            op_cash = cashflow.loc["Total Cash From Operating Activities"]
+            capex = cashflow.loc["Capital Expenditures"]
+            fcf_list = (op_cash - capex).dropna().sort_index(ascending=False).values[:5]
+        except KeyError:
+            fcf_list = []
 
         return {
             "Ticker": ticker,
@@ -42,7 +44,9 @@ def get_stock_data(ticker):
             "ROE": info.get("returnOnEquity", None),
             "Debt to Equity": info.get("debtToEquity", None),
             "Price": info.get("currentPrice", None),
-            "FCF": fcf_list
+            "FCF": fcf_list,
+            "Dividend Yield": info.get("dividendYield", None),
+            "Forward PE": info.get("forwardPE", None)
         }
     except Exception as e:
         st.error(f"Error retrieving data: {e}")
@@ -91,6 +95,8 @@ if ticker_input:
         st.write("**Sector:**", data["Sector"])
         st.write("**Market Cap:**", f"{data['Market Cap']:,}")
         st.write("**Price:**", f"${data['Price']}")
+        st.write("**Dividend Yield:**", f"{data['Dividend Yield'] * 100:.2f}%" if data["Dividend Yield"] else "N/A")
+        st.write("**Forward P/E:**", data["Forward PE"] if data["Forward PE"] else "N/A")
 
         st.write("---")
         st.subheader("Buffett Criteria Evaluation")
@@ -116,7 +122,7 @@ if ticker_input:
             else:
                 st.warning("Inconsistent or negative Free Cash Flow")
         else:
-            st.warning("Insufficient FCF data")
+            st.warning("Insufficient FCF data or unavailable")
 
         st.write("---")
         st.subheader("Intrinsic Value Calculator")
